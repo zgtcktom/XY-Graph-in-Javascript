@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Test</title>
+		<script>
+			window.addEventListener('load', function(event) {
+				render(document.getElementById('canvas1'), ['x=2*y*5', 'y=x^2'], 0.87, 305, 200);
+				var x = 305, y = 200;
+				Sensor.drag(document.getElementById('canvas1'), {
+					dragstart : function(e) {
+
+					},
+					dragging : function(e) {
+						render(document.getElementById('canvas1'), ['x=2*y*5', 'y=x^2'], 0.87, x + e.distanceX, y + e.distanceY);
+					},
+					dragend : function(e) {
+						x += e.record[e.record.length - 2].distanceX || 0;
+						y += e.record[e.record.length - 2].distanceY || 0;
+						console.log(x)
+					}
+				});
+				tooltip(document.getElementById('canvas1'), ['x=2*y*5', 'y=x^2'], 0.87, x, y);
+			});
+
+			var calc = function(expr, vars) {
+				if (isFinite(expr))
+					return expr * 1;
+				expr = expr.replace(/ /g, '').replace(/[a-z]/gi, function(str) {
+					var value = vars[str];
+					return value != undefined ? '(' + value + ')' : str;
+				}).replace(/[)0-9](?=\()/g, '$&*');
+				while (expr.indexOf('(') != -1) {
+					expr = expr.replace(/\([^()]+\)/g, function(expr) {
+						return calc(expr.slice(1, -1));
+					});
+				}
+				expr = expr.replace(/[0-9][a-z]/gi, function(str) {
+					return str[0] + '*' + str[1];
+				}).replace(/([+-]?\d*\.?\d+)\^([+-]?\d*\.?\d+)/g, function(str, n, inx) {
+					return Math.pow(n, inx);
+				});
+				expr = expr.replace(/(sin|cos|tan|log)([+-]?\d*\.?\d+)/g, function(str, p1, val) {
+					if (p1 == 'log')
+						return Math.log(val) / Math.log(10);
+					if (p1 == 'sin')
+						return Math.sin(val * Math.PI / 180);
+					if (p1 == 'cos')
+						return Math.cos(val * Math.PI / 180);
+					if (p1 == 'tan')
+						return Math.tan(val * Math.PI / 180);
+				});
+				var terms = expr.match(/([+-]|^)\d*\.?\d+([*/][+-]?\d*\.?\d+)*/g);
+				if (terms)
+					for (var i = 0, len = terms.length, result = 0; i < len; i++) {
+						var term = terms[i].match(/([*/]|^)[+-]?\d*\.?\d+/g), value = 1;
+						for (var c = 0, length = term.length; c < length; c++) {
+							var val = term[c];
+							value = val[0] == '/' ? (value / val.slice(1)) : (value * (val[0] == '*' ? val.slice(1) : val));
+						}
+						result += value;
+					}
+				return result;
+			};
+
+			console.log(calc('2y*x((6+5)-2/2)+2xtan8^2', {
+				x : 1,
+				y : 8
+			}));
+
+			var GraphPaper = function(width, height) {
+				var canvas = document.createElement('canvas');
+				var context = canvas.getContext('2D');
+				var width = this.width = width || 300;
+				var height = this.height = height || 300;
+				this.originX = width / 2;
+				this.originY = height / 2;
+			};
+
+			var tooltip = function(canvas, data, scale, originX, originY) {
+				var context = canvas.getContext('2d');
+				canvas.addEventListener('mousemove', function(event) {
+					render(canvas, data, scale, originX, originY);
+					context.rect(event.offsetX+20, event.offsetY+20, 100, 20);
+					context.fillText(-(originX - event.offsetX) * scale + ',' + (originY - event.offsetY) * scale, event.offsetX+20, event.offsetY+35);
+
+					context.stroke();
+				});
+			};
+
+			var render = function(canvas, data, scale, originX, originY) {
+
+				var context = canvas.getContext('2d');
+
+				var width = canvas.width, height = canvas.height;
+
+				var x, y;
+
+				var top = -originY, left = -originX;
+				var bottom = height + top, right = width + left;
+
+				var gridWidth = ~~(Math.max(context.measureText(left).width, context.measureText(right).width) / 10) * 10 + 10;
+				var gridHeight = 30;
+
+				var offsetX = right - ~~(right / gridWidth) * gridWidth;
+				var offsetY = bottom - ~~(bottom / gridHeight) * gridHeight;
+
+				context.save();
+
+				context.clearRect(0, 0, width, height);
+
+				context.translate(.5, .5);
+				context.font = '12px Segoe UI';
+
+				context.textBaseline = 'middle';
+
+				context.beginPath();
+				context.moveTo( x = originX <= 0 ? 0 : originX >= width ? width : originX, 0);
+				context.lineTo(x, height);
+				context.stroke();
+
+				if (x > width / 2)
+					context.textAlign = 'right';
+
+				for (var y = height - offsetY; y > 0; y -= gridHeight) {
+					context.beginPath();
+					context.moveTo(x - 3, y);
+					context.lineTo(x + 3, y);
+					context.fillText((originY - y) * scale, x + (x <= width / 2 ? 6 : -6), y - .5);
+					context.stroke();
+				}
+
+				context.textAlign = 'center';
+
+				context.beginPath();
+				context.moveTo(0, y = originY <= 0 ? 0 : originY >= height ? height : originY);
+				context.lineTo(width, y);
+				context.stroke();
+
+				for (var x = width - offsetX; x > 0; x -= gridWidth) {
+					context.beginPath();
+					context.moveTo(x, y - 3);
+					context.lineTo(x, y + 3);
+					context.fillText((x - originX) * scale, x, y + (y <= height / 2 ? 12 : -12));
+					context.stroke();
+				}
+
+				for (var i = 0, len = data.length; i < len; i++) {
+					var equ = data[i];
+					context.beginPath();
+					if (equ[0] == 'x')
+						for (var y = 0; y <= height; y++) {
+							context[y==height?'moveTo':'lineTo'](-calc(equ.slice(2), {
+								y : (top + y) * scale
+							}) / scale + originX, y);
+						}
+					else
+						for (var x = 0; x <= width; x++) {
+							context[x==width?'moveTo':'lineTo'](x, -calc(equ.slice(2), {
+								x : (left + x) * scale
+							}) / scale + originY);
+						}
+					context.stroke();
+				}
+
+				context.restore();
+			};
+
+			var Sensor = {};
+
+			Sensor.drag = function(element, callback) {
+
+				var record;
+
+				var dragstart = callback.dragstart;
+				var dragging = callback.dragging;
+				var dragend = callback.dragend;
+
+				var initialX, initialY, timestamp;
+
+				var onmousemove = function(event) {
+					var x = event.offsetX, y = event.offsetY;
+
+					var distanceX = x - initialX, distanceY = y - initialY;
+
+					var data = {
+						distance : Math.sqrt(Math.pow(distanceX, 2) + Math.pow(distanceY, 2)),
+						distanceX : distanceX,
+						distanceY : distanceY,
+						x : x,
+						y : y,
+						timestamp : performance.now() - timestamp
+					};
+
+					record.push(data);
+
+					dragging(data);
+				};
+
+				var onmouseup = function(event) {
+					var data = {
+						x : initialX = event.offsetX,
+						y : initialY = event.offsetY,
+						timestamp : performance.now()
+					};
+
+					record.push(data);
+
+					dragend({
+						x : event.offsetX,
+						y : event.offsetY,
+						timestamp : performance.now() - timestamp,
+						record : record
+					});
+
+					initialX = initialY = null;
+					element.removeEventListener('mousemove', onmousemove);
+					element.removeEventListener('mouseup', onmouseup);
+				};
+
+				element.addEventListener('mousedown', function(event) {
+
+					timestamp = performance.now();
+
+					var data = {
+						x : initialX = event.offsetX,
+						y : initialY = event.offsetY
+					};
+
+					dragstart(data);
+
+					record = [data];
+
+					element.addEventListener('mousemove', onmousemove);
+					element.addEventListener('mouseup', onmouseup);
+				});
+
+			};
+
+		</script>
+	</head>
+	<body>
+		<canvas id="canvas1" width="1000" height="300"></canvas>
+		<div id="div1" style="width:500px;height:250px;border:1px solid red;"></div>
+		<input type="text" id='x' />
+		<input type="text" id='y' />
+	</body>
+</html>
